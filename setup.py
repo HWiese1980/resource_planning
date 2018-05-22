@@ -2,7 +2,10 @@
 # -*- coding: utf-8 -*-
 
 from setuptools import setup
-
+import sys
+if sys.version_info < (3,6):
+    sys.exit('Sorry, Python < 3.6 is not supported')
+    
 setup(
     name = "TogglResourceSummary",
     version = "0.0.1",
