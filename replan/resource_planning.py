@@ -33,6 +33,18 @@ hdl = RainbowLoggingHandler()
 hdl.setLevel(logging.DEBUG)
 log.addHandler(hdl)
 
+class Colour:
+   PURPLE = '\033[95m'
+   CYAN = '\033[96m'
+   DARKCYAN = '\033[36m'
+   BLUE = '\033[94m'
+   GREEN = '\033[92m'
+   YELLOW = '\033[93m'
+   RED = '\033[91m'
+   BOLD = '\033[1m'
+   UNDERLINE = '\033[4m'
+   END = '\033[0m'
+
 def mk_headline(msg = "", sgn = "-", l = 90, indent = 3):
     h = [sgn]*l
     if msg != "":
@@ -155,7 +167,11 @@ def check_for_expected_hours(days, get_working_hours_func):
             dur_h += e[3].total_seconds()/3600.0
         overunder = dur_h - get_working_hours_func(d)
         overunder_sum += overunder
-        log.info(f" {dt.strftime(d, '%d.%m.%Y')}; duration: {dur_h:3.1f} hours, => +/- {overunder:>8.1f} hours")
+
+        c = Colour.RED if overunder < 0.0 else Colour.BLUE
+        overunder_str = f"{Colour.BOLD}{c}{overunder:>4.1f}{Colour.END}"
+
+        log.info(f" {dt.strftime(d, '%d.%m.%Y')}; duration: {dur_h:>4.2f} hours, => +/- {overunder_str} hours")
 
     log.info(mk_headline("Sum of daily hours"))
     log.info(f" +/- {overunder_sum:>8.1f} hours")
