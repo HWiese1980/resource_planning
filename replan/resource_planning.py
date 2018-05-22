@@ -171,7 +171,7 @@ def check_for_expected_hours(days, get_working_hours_func):
         c = Colour.RED if overunder < 0.0 else Colour.BLUE
         overunder_str = f"{Colour.BOLD}{c}{overunder:>4.1f}{Colour.END}"
 
-        log.info(f" {dt.strftime(d, '%d.%m.%Y')}; duration: {dur_h:>4.2f} hours, => +/- {overunder_str} hours")
+        log.info(f" {dt.strftime(d, '%d.%m.%Y')}; duration: {dur_h:>5.2f} hours, => +/- {overunder_str} hours")
 
     log.info(mk_headline("Sum of daily hours"))
     log.info(f" +/- {overunder_sum:>8.1f} hours")
