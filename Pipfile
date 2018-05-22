@@ -1,0 +1,16 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[dev-packages]
+
+[packages]
+"e1839a8" = {path = ".", editable = true}
+pytoggl = {git = "https://github.com/HWiese1980/pytoggl.git", ref = "python3"}
+pyyaml = "*"
+python-dateutil = "*"
+logutils = "*"
+
+[requires]
+python_version = "3.6"
