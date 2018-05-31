@@ -79,8 +79,37 @@ class YamlBase(yaml.YAMLObject):
             log.debug("YAML Base %s: set Attribute %s -> %s" % (self.__class__.__name__, attr, val))
             setattr(self, attr, val)
 
+
 class Config(YamlBase):
     yaml_tag = u"!Config"
+
+
+class Mapping(YamlBase):
+    yaml_tag = u"!Mapping"
+
+    def __repr__(self):
+        return f"Map to {self.productive_project}"
+
+class ProductivityMapping(YamlBase):
+    yaml_tag = u"!PMapping"
+
+    def __init__(self, name, mappings):
+        self.name = name
+        self.mappings = mappings
+
+    def __repr__(self):
+        return f"Mappings for {self.name}: {', '.join([str(s) for s in self.mappings])}"
+
+class ProductivityMappingDict(YamlBase):
+    yaml_tag = u"!PMappingDict"
+
+    def __getitem__(self, i):
+        ret = [s for s in self.mappings if s.name == i]
+        assert len(ret) <= 1, f"There's more than one mapping for project {i}"
+        return ret[0]
+
+    def __iter__(self):
+        return self.mappings.__iter__()
 
 class WorkingHours:
     def __init__(self, start, end, sum_of_breaks = 1, worktimings=None, weekends=None, holidays=None):
@@ -163,8 +192,8 @@ def check_for_expected_hours(days, get_working_hours_func):
         dur = tdelta(hours = 0)
         dur_h = 0.0
         for e in days[d]:
-            dur += e[3]
-            dur_h += e[3].total_seconds()/3600.0
+            dur += e.duration
+            dur_h += e.duration.total_seconds()/3600.0
         overunder = dur_h - get_working_hours_func(d)
         overunder_sum += overunder
 
@@ -188,20 +217,20 @@ def check_for_expected_hours(days, get_working_hours_func):
 def check_for_gaps_and_overlaps(days):
     okay = True
     for d in days:
-        items = sorted(days[d], key=lambda x: x[1])
+        items = sorted(days[d], key=lambda x: x.start)
 
         for i, first in enumerate(items[:-1]):
             second = items[i+1]
 
-            if first[1].date() != first[2].date():
-                log.warn(f"    [step] {first[0]:<10s} overlaps midnight")
-            if second[1].date() != second[2].date():
-                log.warn(f"    [step] {second[0]:<10s} overlaps midnight")
+            if first.start.date() != first.end.date():
+                log.warn(f"    [step] {first.name:<10s} overlaps midnight")
+            if second.start.date() != second.end.date():
+                log.warn(f"    [step] {second.name:<10s} overlaps midnight")
 
-            f_end_str = dt.strftime(first[2], "%H:%M:%S")
-            s_start_str = dt.strftime(second[1], "%H:%M:%S")
+            f_end_str = dt.strftime(first.end, "%H:%M:%S")
+            s_start_str = dt.strftime(second.start, "%H:%M:%S")
 
-            diff = second[1] - first[2]
+            diff = second.start - first.end
             if diff.total_seconds() >= gap_threshold_seconds:
                 stat = "gap"
                 okay = False
@@ -212,7 +241,7 @@ def check_for_gaps_and_overlaps(days):
                 stat = None
 
             if stat:
-                log.warn(f"    [{stat}] {abs(diff.total_seconds()):>8.0f}s; {first[0]:10s} and {second[0]:10s} on {first[2].date()}: {f_end_str} -> {s_start_str}")
+                log.warn(f"    [{stat}] {abs(diff.total_seconds()):>8.0f}s; {first.name:10s} and {second.name:10s} on {first.name.date()}: {f_end_str} -> {s_start_str}")
 
     return okay
 
@@ -223,7 +252,8 @@ def check_for_completeness(days, actual_work_days):
         if d.date() >= datetime.datetime.today().date():
             break
         if d.date() not in days:
-            log.warn("Workday %s has no entry" % dt.strftime(d.date(), "%d.%m.%Y"))
+            log.warn(f"Workday {dt.strftime(d.date(), '%d.%m.%Y')} has no entry")
+            log.info(f"Entries:{', '.join(days.keys())} ")
             okay = False
     return okay
 
@@ -236,8 +266,69 @@ def check_weekends(days, weekends):
             okay = False
     return okay
 
+class Entry:
+    def __init__(self, name, start, end, duration, tags = None):
+        self.name = name
+        self.start = start
+        self.end = end
+        self.duration = duration
+        self.tags = tags or []
+
+    def __repr__(self):
+        return f"{self.name} {dt.strftime(self.start, '%H:%M')} - {dt.strftime(self.end, '%H:%M')} => {format_td(self.duration)} [{', '.join(self.tags)}]"
+
+def format_td(td):
+    s = td.seconds
+    dh = s // 3600
+    s -= dh*3600
+    dm = s // 60
+    s -= dm*60
+    return f"{dh:02d}:{dm:02d}"
+
+class StrictList(list):
+    def __init__(self, t):
+        self.type = t
+
+    def append(self, value):
+        assert isinstance(value, self.type), f"Append: {value} is not of type {self.type}"
+        super(StrictList, self).append(value)
+
+    def __setitem__(self, i, value):
+        assert isinstance(value, self.type), f"{i} => {value} is not of type {self.type}"
+        super(StrictList, self).__setitem__(i, value)
+
+class SmartList(StrictList):
+    def shrinked(self):
+        ret = DefaultDict(tdelta(0.0))
+        for i, u in enumerate(self):
+            for j, v in enumerate(self):
+                if v is u: continue
+            log.info(f"Checking {u} == {v}")
+            if u.name == v.name:
+                ret[u.name] += v.duration
+        return ret
+
+class StrictDict(dict):
+    def __init__(self, t):
+        self.type = t
+
+    def __setitem__(self, i, value):
+        assert isinstance(value, self.type), f"{i} => {value} is not of type {self.type}"
+        super(StrictDict, self).__setitem__(i, value)
+
+class DefaultDict(dict):
+    def __init__(self, d):
+        self.default = d
+
+    def __getitem__(self, i):
+        if i not in super(DefaultDict, self).keys():
+            super(DefaultDict, self).__setitem__(i, self.default)
+        return super(DefaultDict, self).__getitem__(i)
+
 class ResourcePlanner:
     def __init__(self, start_date, end_date, config):
+        self.config = config
+
         self.api_key = config.api["api_key"]
         self.holidays = parse_holidays(config.holidays)
         self.api = Api(self.api_key)
@@ -246,9 +337,12 @@ class ResourcePlanner:
         self.end = end_date
         self.worktimings = config.settings["worktimings"]
         self.weekends = config.settings["weekends"]
+        self.productivity_mappings = config.productivity_mappings
+
+        self.days = StrictDict(StrictList)
 
         self.bh = WorkingHours(self.start, self.end, weekends = self.weekends, worktimings = self.worktimings, holidays = self.holidays)
-        Workspace.working_hours = self.bh
+        # Workspace.working_hours = self.bh
         log.info(mk_headline(sgn="="))
         log.info(mk_headline("Resource Planner", "#"))
         log.info(mk_headline(sgn="="))
@@ -264,16 +358,16 @@ class ResourcePlanner:
 
     def load_data(self):
         pass
-    def show_percents(self):
+
+    def calculate_percents(self):
         for ws in self.ws:
-            ws_obj = Workspace(ws)
+            # ws_obj = Workspace(ws)
 
             log.info(mk_headline(f"Times in Workspace {ws}", "*"))
-            days = {}
-            seconds = {}
-            total_time = tdelta(0)
+            # seconds = {}
+            self.total_time = tdelta(0)
 
-            project_seconds = {
+            self.project_seconds = {
                 "Vacations": 0.0,
                 "Sick": 0.0
             }
@@ -301,72 +395,114 @@ class ResourcePlanner:
                     is_pause = False
                     original_p_name = ""
 
-                    if start.date() not in days:
-                        days[start.date()] = []
+                    if start.date() not in self.days:
+                        self.days[start.date()] = SmartList(Entry)
 
-                    if (p_name == "Holidays"
-                        or (hasattr(i, "tags")
-                            and "Pause" in i.tags)):
-                        days[start.date()].append(("Pause", start, end, dur))
-                        continue
+                    if p_name not in self.project_seconds:
+                        self.project_seconds[p_name] = 0.0
+
+                    e = None
+                    add_dur = True
+                    if (p_name == "Holidays" or (hasattr(i, "tags") and "Pause" in i.tags)):
+                        e = Entry(p_name, start, end, dur, ["pause"])
+                        add_dur = False
+                    elif hasattr(i, "tags") and "Overhead" in i.tags:
+                        e = Entry(p_name, start, end, dur, ["overhead"])
                     else:
-                        if p_name not in project_seconds:
-                            project_seconds[p_name] = 0.0
+                        e = Entry(p_name, start, end, dur)
 
-                        project_seconds[p_name] += dur.total_seconds()
-                        days[start.date()].append((p_name, start, end, dur))
+                    self.days[start.date()].append(e)
+                    if add_dur: self.project_seconds[p_name] += dur.total_seconds()
+    def checks(self):
+        log.info(f"Performing checks on {', '.join([str(s) for s in self.days.keys()])}")
+        check_for_expected_hours(self.days, self.get_working_hours)
+        check_for_gaps_and_overlaps(self.days)
+        check_for_completeness(self.days, self.bh.get_actual_work_days())
+        check_weekends(self.days, self.weekends)
 
-            check_for_expected_hours(days, self.get_working_hours)
-            check_for_gaps_and_overlaps(days)
+    def apply_holidays(self):
+        for h in self.bh.holidays:
+            if h[1] == "Holidays":
+                continue
 
-            for h in self.bh.holidays:
-                if h[1] == "Holidays":
-                    continue
+            d = h[0].date()
+            if d < self.start.date() or d > self.end.date():
+                continue
 
-                d = h[0].date()
-                if d < self.start.date() or d > self.end.date():
-                    continue
+            dwh = self.bh.get_daily_working_hours()
+            self.project_seconds[h[1]] += tdelta(hours=dwh).total_seconds()
+            self.total_time += tdelta(hours = dwh)
+            if d not in self.days:
+                self.days[d] = StrictList(Entry)
+            self.days[d].append(Entry(h[1], d, add_hours(d, dwh), tdelta(hours = dwh), ["off"]))
 
-                dwh = self.bh.get_daily_working_hours()
-                project_seconds[h[1]] += tdelta(hours=dwh).total_seconds()
-                total_time += tdelta(hours = dwh)
-                if d not in days:
-                    days[d] = []
-                days[d].append((h[1], d, add_hours(d, dwh), tdelta(hours = dwh)))
-
-            check_for_completeness(days, self.bh.get_actual_work_days())
-            check_weekends(days, self.weekends)
-
+    def output_results(self):
             log.info(mk_headline(f"Resulting Resource Distribution", "="))
             log.info(mk_headline(sgn="-"))
             perc_sum = 0.0
-            for p_name in project_seconds:
-                phours = project_seconds[p_name] / 3600.
+            for p_name in self.project_seconds:
+                phours = self.project_seconds[p_name] / 3600.
                 percent = phours / self.bh.gethours() * 100.
                 if percent < 5.0:
                     continue
 
                 if p_name != "Vacations" and p_name != "Sick":
-                    total_time += tdelta(hours = phours)
+                    self.total_time += tdelta(hours = phours)
 
                 perc_sum += percent
                 log.info(f"    {p_name:<20s}: {percent:>3.0f}% (hours: {phours:>10.1f})")
 
             log.info(mk_headline("Total hours in the given period", "-"))
-            total_hours = total_time.total_seconds() / 3600.
+            total_hours = self.total_time.total_seconds() / 3600.
             log.info(f" {total_hours:>3.1f} hours => {total_hours/self.bh.gethours() * 100.:>3.0f}%")
             log.info(mk_headline(sgn="="))
+
+    def output_ezve(self):
+        log.info(f"Productivity mappings: {self.productivity_mappings}")
+        for d in self.days:
+            day = self.days[d]
+
+            project_seconds = DefaultDict(0.0)
+            day_seconds = 0.0
+
+            for e in day:
+                if "pause" in e.tags:
+                    continue
+                project_seconds[e.name] += e.duration.seconds
+                day_seconds += e.duration.seconds
+
+            prod_mapping_names = [m.name for m in self.productivity_mappings]
+            for s in project_seconds:
+                log.info(f"Project seconds of {s}... in {prod_mapping_names}?")
+                mapped_seconds = DefaultDict(0.0)
+
+                if s in prod_mapping_names:
+                    mappings = self.productivity_mappings[s].mappings
+                    mapping_count = len(mappings)
+                    log.info(f"{e.name} has {mapping_count} mappings")
+                    for m in mappings:
+                        log.info(f"Project {e.name} has productivity mapping: {m.fraction*100.}% of {m.productive_project}")
+                        mapped_seconds[m.productive_project] += e.duration.seconds * m.fraction
+                else:
+                    mapped_seconds[s] = project_seconds[s]
+
+            log.info(mapped_seconds)
+
+            for s in mapped_seconds:
+                ps = mapped_seconds[s]
+                log.info(f"{s:15s} {ps / day_seconds * 100.:>8.0f}%")
 
 def main():
     parser = argparse.ArgumentParser()
     curr_month = int(datetime.datetime.now().strftime("%m"))
     curr_year = int(datetime.datetime.now().strftime("%Y"))
     parser.add_argument("month", nargs="?", default=curr_month, type=int, help="Month of this year to be evaluated")
-    parser.add_argument("--year", default=curr_year, type=int, help="Year of the given month to be evaluated")
-    parser.add_argument("--start", type=str, default=False, help="Start date of period to be evaluated")
-    parser.add_argument("--end", type=str, default=False, help="End date of period to be evaluated")
+    parser.add_argument("year", nargs="?", default=curr_year, type=int, help="Year of the given month to be evaluated")
+    parser.add_argument("--start", "-s", type=str, default=False, help="Start date of period to be evaluated")
+    parser.add_argument("--end", "-e", type=str, default=False, help="End date of period to be evaluated")
     parser.add_argument("--config", "-c", default=config_file, help="File containing configuration")
-    parser.add_argument("--ezve", "-e", default=False, help="Print out EZVE CSV")
+    parser.add_argument("--no-checks", "-n", action="store_true", help="Skip all checks")
+    parser.add_argument("--ezve", "-z", action="store_true", default=False, help="Print out EZVE CSV")
 
     args = parser.parse_args()
 
@@ -382,7 +518,15 @@ def main():
         config = yaml.load(f)
 
     rp = ResourcePlanner(start, end, config = config)
-    rp.show_percents()
+    rp.calculate_percents()
+    rp.apply_holidays()
+    if not args.no_checks:
+        rp.checks()
+
+    if args.ezve:
+        rp.output_ezve()
+    else:
+        rp.output_results()
 
 if __name__ == "__main__":
     main()
