@@ -192,9 +192,9 @@ class ResourcePlanner:
                     mappings = self.productivity_mappings[s].mappings
                     for m in mappings:
                         prod_proj = self.projects.get_by_code(m.productive_project)
-                        mapped_seconds[prod_proj.kst] += ps * m.fraction
+                        mapped_seconds[prod_proj.ccenter] += ps * m.fraction
                 else:
-                    mapped_seconds[prod_proj.kst] += ps
+                    mapped_seconds[prod_proj.ccenter] += ps
 
             day_sum = 0
             for s in mapped_seconds:
