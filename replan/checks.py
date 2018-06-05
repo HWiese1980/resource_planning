@@ -81,7 +81,7 @@ def check_for_gaps_and_overlaps(days):
                 stat = None
 
             if stat:
-                log.warn(f"    [{stat}] {abs(diff.total_seconds()):>8.0f}s; {first.name:10s} and {second.name:10s} on {first.name.date()}: {f_end_str} -> {s_start_str}")
+                log.warn(f"    [{stat}] {abs(diff.total_seconds()):>8.0f}s; {first.name:10s} and {second.name:10s} on {first.name}: {f_end_str} -> {s_start_str}")
 
     return okay
 
@@ -94,7 +94,7 @@ def check_for_completeness(days, actual_work_days):
             break
         if d.date() not in days:
             log.warn(f"Workday {dt.strftime(d.date(), '%d.%m.%Y')} has no entry")
-            log.info(f"Entries:{', '.join(days.keys())} ")
+            log.info(f"Entries:{', '.join([str(x) for x in days.keys()])} ")
             okay = False
     return okay
 

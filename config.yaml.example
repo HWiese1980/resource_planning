@@ -46,6 +46,7 @@ projects: !ProjectDict
       code: project1
       name: Project 1
       ccenter: 12345
+      max: 0.5 # set maximum for EZVE entry. Remaining work will be distributed to the other projects
     - !Project
       code: project2
       name: Project 2

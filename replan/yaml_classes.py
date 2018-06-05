@@ -25,9 +25,20 @@ class Config(YamlBase):
 class Project(YamlBase):
     yaml_tag = u"!Project"
 
+    def __init__(self, code, name, ccenter, max = 1.0):
+        super(Project, self).__init__()
+        self.code = code
+        self.name = name
+        self.ccenter = ccenter
+        self.max = max
 
 class Mapping(YamlBase):
     yaml_tag = u"!Mapping"
+
+    def __init__(self, productive_project, fraction = 1.0):
+        super(Mapping, self).__init__()
+        self.productive_project = productive_project
+        self.fraction = fraction
 
     def __repr__(self):
         return f"Map to {self.productive_project}"
@@ -46,7 +57,7 @@ class ProjectDict(YamlBase):
             p = Project()
             p.name = name
             p.code = name.lower()
-            p.kst = 0
+            p.ccenter = 0
             return p
 
         assert len(ret) == 1, f"There's more than one project named {name}"
@@ -58,10 +69,21 @@ class ProjectDict(YamlBase):
             p = Project()
             p.name = code
             p.code = code.lower()
-            p.kst = 0
+            p.ccenter = 0
             return p
-
+    
         assert len(ret) == 1, f"There's more than one project with code {code}"
+        return ret[0]
+    
+    def get_by_ccenter(self, ccenter):
+        ret = [s for s in self.definitions if s.ccenter == ccenter]
+        if ccenter <= 0 or not any(ret):
+            p = Project()
+            p.name = ccenter
+            p.code = ccenter
+            p.ccenter = 0
+            return p
+        assert len(ret) == 1, f"There's more than one project with ccenter {ccenter}"
         return ret[0]
 
     def __getitem__(self, name):

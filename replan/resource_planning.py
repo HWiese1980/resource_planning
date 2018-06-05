@@ -192,23 +192,74 @@ class ResourcePlanner:
                     mappings = self.productivity_mappings[s].mappings
                     for m in mappings:
                         prod_proj = self.projects.get_by_code(m.productive_project)
-                        mapped_seconds[prod_proj.ccenter] += ps * m.fraction
+                        mapped_seconds[(prod_proj.code, prod_proj.ccenter)] += ps * m.fraction
                 else:
-                    mapped_seconds[prod_proj.ccenter] += ps
+                    mapped_seconds[(prod_proj.code, prod_proj.ccenter)] += ps
 
             day_sum = 0
-            for s in mapped_seconds:
-                ps = mapped_seconds[s]
-                ps_perc = ps / day_seconds * 100.
-                ps_perc = int(self.ezve_rounding * round(float(ps_perc)/self.ezve_rounding))
-                day_sum += ps_perc
-                log.info(f"  {str(s):15s} {ps_perc:>8.0f}%")
-                lines.append(f"{d.year}\t{d.month}\t{d.day}\t{s:05d}\t{ps_perc}")
+            percents = DefaultDict(0)
+            remaining = 0
 
-            assert day_sum == 100, f"Day does not sum to 100: {day_sum}%"
-            with open(outfile, "w") as f:
-                for l in lines:
-                    f.write(l+"\n")
+            maxed_out_projects = []
+
+            codes = list(mapped_seconds.keys())
+            percents = [0]*len(codes)
+            percents = dict(zip(codes, percents))
+
+            def ezve_round(v):
+                return int(self.ezve_rounding * round(float(v * 100.) / self.ezve_rounding)) / 100.
+
+            for ms in mapped_seconds:
+                ps = mapped_seconds[ms]
+                percents[ms] = ps / day_seconds
+                percents[ms] = ezve_round(percents[ms])
+
+            remains = DefaultDict(0.0)
+            for pc in percents:
+                c, cc = pc
+                prj = self.projects.get_by_code(c)
+                remains[pc] = min(1.0, prj.max) - percents[pc]
+
+            underfull_projects = dict([(i,remains[i]) for i in remains if remains[i] > 0.0])
+            overfull_projects = dict([(i,remains[i]) for i in remains if remains[i] < 0.0])
+            for ofp in overfull_projects:
+                c, cc = ofp
+                prj = self.projects.get_by_code(c)
+                percents[ofp] = prj.max
+                if not any(underfull_projects):
+                    log.warning(
+                        f"There are no unfilled projects on this day that could take the remaining {remains[ofp]*-100}% of {prj.name}"
+                    )
+                    log.warning(
+                        f"Please make sure that at least one other entry is given in Toggl that can take the overflow"
+                    )
+                    continue
+
+                while remains[ofp] > 0:
+                    r = remains[ofp]
+                    subt = r / len(underfull_projects)
+                    subt = ezve_round(subt)
+                    for ufp in underfull_projects:
+                        if subt > remains[ufp]:
+                            subt = remains[ufp]
+
+                        r -= subt
+                        remains[ufp] -= subt
+                        percents[ufp] += subt
+
+
+            for c, cc in percents:
+                p = percents[(c,cc)]
+                day_sum += int(p * 100)
+                log.info(f"  {c:15s} -> CC: {str(cc):15s} {p*100:>8.0f}%")
+                lines.append(f"{d.year}\t{d.month}\t{d.day}\t{cc:05d}\t{p*100}")
+
+            if day_sum < 100:
+                log.warning("This day is not filled to 100%!")
+
+        with open(outfile, "w") as f:
+            for l in lines:
+                f.write(l+"\n")
 
 
 def main():
