@@ -5,6 +5,7 @@ from replan.logging import log
 
 class StrictList(list):
     def __init__(self, t):
+        super(StrictList,self).__init__()
         self.type = t
 
     def append(self, value):
@@ -16,20 +17,21 @@ class StrictList(list):
         super(StrictList, self).__setitem__(i, value)
 
 
-class SmartList(StrictList):
-    def shrinked(self):
-        ret = DefaultDict(tdelta(0.0))
-        for i, u in enumerate(self):
-            for j, v in enumerate(self):
-                if v is u: continue
-            log.info(f"Checking {u} == {v}")
-            if u.name == v.name:
-                ret[u.name] += v.duration
-        return ret
-
-
+# class SmartList(StrictList):
+#     def shrinked(self):
+#         ret = DefaultDict(tdelta(0.0))
+#         for i, u in enumerate(self):
+#             for j, v in enumerate(self):
+#                 if v is u: continue
+#                 log.info(f"Checking {u} == {v}")
+#                 if u.name == v.name:
+#                     ret[u.name] += v.duration
+#         return ret
+#
+#
 class StrictDict(dict):
     def __init__(self, t):
+        super(StrictDict,self).__init__()
         self.type = t
 
     def __setitem__(self, i, value):
@@ -39,6 +41,7 @@ class StrictDict(dict):
 
 class DefaultDict(dict):
     def __init__(self, d):
+        super(DefaultDict,self).__init__()
         self.default = d
 
     def __getitem__(self, i):

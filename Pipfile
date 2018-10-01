@@ -11,6 +11,8 @@ pytoggl = {git = "https://github.com/HWiese1980/pytoggl.git", ref = "python3"}
 pyyaml = "*"
 python-dateutil = "*"
 logutils = "*"
+pandas = "*"
+pyicu = "*"
 
 [requires]
 python_version = "3.6"

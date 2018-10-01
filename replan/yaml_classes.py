@@ -25,12 +25,17 @@ class Config(YamlBase):
 class Project(YamlBase):
     yaml_tag = u"!Project"
 
-    def __init__(self, code, name, ccenter, max = 1.0):
+    def __init__(self, code, name, ccenter, max = 1.0, ezve_ignore = False):
         super(Project, self).__init__()
         self.code = code
         self.name = name
         self.ccenter = ccenter
         self.max = max
+        self.ezve_ignore = ezve_ignore
+
+    def __repr__(self):
+        return f"Project: [{self.code}] [{self.name}] [{self.ccenter}] [{self.max}] [EZVE: {'no' if self.ezve_ignore else 'yes'}]"
+
 
 class Mapping(YamlBase):
     yaml_tag = u"!Mapping"
@@ -54,7 +59,11 @@ class ProjectDict(YamlBase):
     def get_by_name(self, name):
         ret = [s for s in self.definitions if s.name == name]
         if not any(ret):
-            p = Project()
+            p = Project(
+                code = "empty",
+                name = "empty",
+                ccenter = "0"
+            )
             p.name = name
             p.code = name.lower()
             p.ccenter = 0
@@ -66,7 +75,11 @@ class ProjectDict(YamlBase):
     def get_by_code(self, code):
         ret = [s for s in self.definitions if s.code == code]
         if not any(ret):
-            p = Project()
+            p = Project(
+                code="empty",
+                name="empty",
+                ccenter="0"
+            )
             p.name = code
             p.code = code.lower()
             p.ccenter = 0

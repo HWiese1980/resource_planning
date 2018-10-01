@@ -1,3 +1,8 @@
+from datetime import datetime as dt
+
+from replan.functions import format_td
+
+
 class Entry:
     def __init__(self, name, start, end, duration, tags = None):
         self.name = name

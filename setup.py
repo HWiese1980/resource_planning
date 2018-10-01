@@ -8,7 +8,7 @@ if sys.version_info < (3,6):
 
 setup(
     name = "TogglResourceSummary",
-    version = "0.0.2",
+    version = "0.0.3",
     author = "Hendrik Wiese",
     author_email = "hendrik.wiese@dfki.de",
     description = ("A tool to process and sum up working times tracked on toggl.com"),

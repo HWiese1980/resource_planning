@@ -5,6 +5,9 @@ settings:
   worktimings: [9, 18]
   weekends: [6, 7] # Week starting on Mon (1), Example: Sat (6), Sun (7)
   ezve_rounding: 10 # to what base EZVE entries will get rounded
+  mail_summery_recipients:
+    - some.person@somedomain.com
+    - another.person@somedomain.com
 holidays:
   # Per year holidays, vacation days/periods and sick days/periods
   2018:
