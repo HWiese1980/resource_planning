@@ -2,20 +2,20 @@
 # -*- coding: utf-8 -*-
 import sys
 
-import random
-from toggl.api import Api
-from toggl.workspace import Workspace
+import datetime
+import icu
+import markdown2
+import os
+import pandas
 import pytz
 import pytz.reference
 import pytz.tzinfo
-import icu
-
+import random
 import yaml
-from datetime import datetime as dt, timedelta as tdelta
-import datetime
 from calendar import monthrange
-import os
-import pandas
+from datetime import datetime as dt, timedelta as tdelta
+from toggl.api import Api
+from toggl.workspace import Workspace
 
 from replan.checks import check_for_expected_hours, check_for_gaps_and_overlaps, check_for_completeness, check_weekends
 from replan.collections import StrictList, StrictDict, DefaultDict
@@ -24,7 +24,6 @@ from replan.functions import add_hours, mk_headline
 from replan.logging import log, hdl
 from replan.working_hours import WorkingHours, parse_holidays
 from replan.yaml_classes import *
-import markdown2
 
 __all__ = ["main"]
 
@@ -35,8 +34,6 @@ config_file = os.path.expanduser("~/.toggl_summary/config.yaml")
 import pprint
 import argparse
 import logging
-
-from dateutil.parser import parse as _parse
 
 
 def _try_parse(dt, p):
@@ -193,13 +190,16 @@ class ResourcePlanner:
 
         all_hours = self.bh.get_actual_working_hours()
         log.info(f"Total hours in month {self.start.date().month}: {all_hours}")
-
+        print(mk_headline(sgn="-"))
         perc_sum = 0.0
         for p in project_seconds:
             perc = round(project_seconds[p] / total_seconds * 100.)
             perc_sum += perc
-            print(f"Project {p}: {perc}%")
+            if perc > 0.0:
+                print(f"==> Project {p}: {perc}%")
+        print(mk_headline(sgn="-"))
         print(f"Sum: {perc_sum}%")
+        print(mk_headline(sgn="="))
 
     def calc_project_and_total_seconds(self):
         all_hours = self.bh.get_actual_working_hours(month=self.start.date().month)
@@ -220,6 +220,11 @@ class ResourcePlanner:
 
                 project = self.projects.get_by_name(e.name)
                 project_seconds[project.name] += e.duration.seconds
+
+        sick_days = self.bh.get_sick_days(month=self.start.date().month, year=self.start.date().year)
+        sick_seconds = self.bh.get_daily_working_hours() * 3600. * len(sick_days)
+        postponed_seconds += sick_seconds
+
         for p in project_seconds:
             project_seconds[p] += postponed_seconds / len(project_seconds)
 
@@ -238,10 +243,9 @@ class ResourcePlanner:
                 project_seconds[p] += d_time
 
         vac_days = self.bh.get_vacations(month=self.start.date().month)
-        sick_days = self.bh.get_sick_days(month=self.start.date().month)
         course_days = self.bh.get_course_days(month=self.start.date().month)
         project_seconds["Vacations"] = self.bh.get_daily_working_hours() * 3600. * len(vac_days)
-        project_seconds["Sick"] = self.bh.get_daily_working_hours() * 3600. * len(sick_days)
+        # project_seconds["Sick"] = self.bh.get_daily_working_hours() * 3600. * len(sick_days)
         project_seconds["Courses"] = self.bh.get_daily_working_hours() * 3600. * len(course_days)
         return project_seconds, total_seconds
 
@@ -296,7 +300,6 @@ class ResourcePlanner:
         log.info(mk_headline(sgn="="))
 
     def output_planning(self):
-        from resource_logging.template import template, dtemplate, stemplate
         from string import Template
         import locale
         locale.setlocale(locale.LC_ALL, '')
@@ -362,11 +365,11 @@ class ResourcePlanner:
             "perc": (round((pcourses_perc * 100) / 5) * 5)
         }
 
-        pdata["Sick"] = {
-            "project": "Krank",
-            "perc": (round((psick_perc * 100) / 5) * 5)
-        }
-
+        # pdata["Sick"] = {
+        #     "project": "Krank",
+        #     "perc": (round((psick_perc * 100) / 5) * 5)
+        # }
+        #
         ndata["Courses"] = {
             "project": "Seminare/Weiterbildung",
             "perc": (round((ncourses_perc * 100) / 5) * 5)
