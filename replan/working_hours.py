@@ -15,7 +15,9 @@ class WorkingHours:
         return self._get_days_by_type("Holidays", month, year)
 
     def get_vacations(self, month=-1, year=-1):
-        return self._get_days_by_type("Vacations", month, year)
+        by_type = self._get_days_by_type("Vacations", month, year)
+        print(f"Vacation days {len(by_type)} in {month}/{year}")
+        return by_type
 
     def get_sick_days(self, month=-1, year=-1):
         return self._get_days_by_type("Sick", month, year)
@@ -24,17 +26,20 @@ class WorkingHours:
         return self._get_days_by_type("Courses", month, year)
 
     def _get_days_by_type(self, day_type, month, year):
-        return [d[0].date() for d in self.holidays if (d[0].month == month or month == -1)
+        return [d[0] for d in self.holidays if (d[0].month == month or month == -1)
                                                    and (d[0].year == year or year == -1)
                                                    and d[1] == day_type and d[0].weekday() + 1 not in self.weekends]
 
     def get_daily_working_hours(self):
         return self.worktimings[1] - self.worktimings[0]
 
+    def get_daily_labor_hours(self):
+        return self.worktimings[1] - self.worktimings[0] - self.breaks
+
     def get_all_work_days(self, month=-1, year=-1):
         if month != -1:
             if year == -1:
-                year = self.start.date().year
+                year = self.start.year
 
             _, diff_days = monthrange(year, month)
             diff_s_dt = dt(self.start.year, month, 1)
@@ -51,7 +56,7 @@ class WorkingHours:
 
     def get_actual_work_days(self, month=-1, year = -1):
         for d in self.get_all_work_days(month, year):
-            if d.date() not in self.get_holidays(month, year):
+            if d not in self.get_holidays(month, year):
                 yield d
 
     def get_number_of_all_workdays(self, month=-1, year = -1):
@@ -81,8 +86,8 @@ def parse_holidays(h):
                     if isinstance(day, (list, tuple)):
                         for d in range(day[0], day[1] + 1):
                             date_time_object = dt(y, month, d)
-                            holidays.append((date_time_object, htype))
+                            holidays.append((date_time_object.date(), htype))
                     elif isinstance(day, int):
                         date_time_object = dt(y, month, day)
-                        holidays.append((date_time_object, htype))
+                        holidays.append((date_time_object.date(), htype))
     return holidays

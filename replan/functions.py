@@ -1,4 +1,5 @@
 from datetime import timedelta as tdelta
+import datetime
 
 
 def add_days(date, number):
@@ -6,6 +7,15 @@ def add_days(date, number):
 
 
 def add_hours(date, number):
+    """
+
+    :param date:
+    :type date: datetime.date or datetime.datetime
+    :param number:
+    :return:
+    """
+    if not hasattr(date, "time"):
+        date = datetime.datetime.combine(date, datetime.datetime.min.time())
     return date + tdelta(hours = number)
 
 

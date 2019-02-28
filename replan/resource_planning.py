@@ -46,10 +46,15 @@ def _try_parse(dt, p):
 
 
 def parse(dt):
+    try:
+        dt = float(dt)
+    except:
+        pass
+
     if isinstance(dt, str):
         ts = parse_to_ts(dt)
     elif isinstance(dt, float):
-        ts = dt
+        ts = dt * 3600.
     else:
         raise ValueError("dt must be str or float")
 
@@ -58,10 +63,12 @@ def parse(dt):
 
 
 def parse_to_ts(dt):
-    df = icu.SimpleDateFormat('dd.MM.yyyy HH:mm', icu.Locale('de_DE'))
+    df = icu.SimpleDateFormat('dd.MM.yyyy, HH:mm', icu.Locale('de_DE'))
     ts = _try_parse(dt, df)
     return ts
 
+def parse_time(t):
+    return datetime.datetime.strptime(t,"%H:%M")
 
 pp = pprint.PrettyPrinter()
 
@@ -105,6 +112,9 @@ class ResourcePlanner:
     def get_working_hours(self, day):
         return self.bh.get_daily_working_hours()
 
+    def get_labor_hours(self, day):
+        return self.bh.get_daily_labor_hours()
+
     def load_data(self):
         pass
 
@@ -133,7 +143,7 @@ class ResourcePlanner:
                     start = i.start.replace(tzinfo=pytz.timezone("UTC"))
                     end = i.stop.replace(tzinfo=pytz.timezone("UTC"))
 
-                    if start.date() < self.start.date() or end.date() > self.end.date():
+                    if start.date() < self.start or end.date() > self.end:
                         continue
 
                     dur = end - start
@@ -161,7 +171,7 @@ class ResourcePlanner:
 
     def checks(self):
         log.info(f"Performing checks on {', '.join([str(s) for s in self.days.keys()])}")
-        check_for_expected_hours(self.days, self.get_working_hours)
+        check_for_expected_hours(self.days, self.get_labor_hours)
         check_for_gaps_and_overlaps(self.days)
         check_for_completeness(self.days, self.bh.get_actual_work_days())
         check_weekends(self.days, self.weekends)
@@ -171,16 +181,33 @@ class ResourcePlanner:
             if h[1] == "Holidays":
                 continue
 
-            d = h[0].date()
-            if d < self.start.date() or d > self.end.date():
+            d = h[0]
+
+            if not (self.start <= d <= self.end):
                 continue
 
-            dwh = self.bh.get_daily_working_hours()
+            weekday = d.weekday()+1
+            if weekday in self.bh.weekends:
+                log.warning(f"Skipping weekend day {d}")
+                continue
+
+            if d not in self.days:
+                log.info(f"Adding new day entry list for day {d}")
+                self.days[d] = StrictList(Entry)
+
+            dwh = self.bh.get_daily_working_hours() - self.bh.breaks
+            dwstart = self.bh.worktimings[0]
+            dtime = add_hours(d, dwstart)
+            dtime = self.get_timezone().localize(dtime)
+
             self.project_seconds[h[1]] += tdelta(hours=dwh).total_seconds()
             self.total_time += tdelta(hours=dwh)
-            if d not in self.days:
-                self.days[d] = StrictList(Entry)
-            self.days[d].append(Entry(h[1], d, add_hours(d, dwh), tdelta(hours=dwh), ["off"]))
+            entry = Entry(h[1], dtime, add_hours(dtime, dwh), tdelta(hours=dwh), ["off"])
+            pause_entry = Entry(h[1], entry.end, add_hours(entry.end, self.bh.breaks), tdelta(hours = self.bh.breaks), ["pause", "off"])
+            log.info(f"Adding entry {entry} to {d}")
+            self.days[d].append(entry)
+            # log.info(f"Adding pause entry {pause_entry} to {d}")
+            # self.days[d].append(pause_entry)
 
     def output_results(self):
         log.info(mk_headline(f"Resulting resource distribution", "="))
@@ -189,11 +216,12 @@ class ResourcePlanner:
         project_seconds, total_seconds = self.calc_project_and_total_seconds()
 
         all_hours = self.bh.get_actual_working_hours()
-        log.info(f"Total hours in month {self.start.date().month}: {all_hours}")
+        log.info(f"Total hours in month {self.start.month}: {all_hours}")
         print(mk_headline(sgn="-"))
         perc_sum = 0.0
         for p in project_seconds:
             perc = round(project_seconds[p] / total_seconds * 100.)
+            perc = round(perc / 5) * 5
             perc_sum += perc
             if perc > 0.0:
                 print(f"==> Project {p}: {perc}%")
@@ -202,7 +230,7 @@ class ResourcePlanner:
         print(mk_headline(sgn="="))
 
     def calc_project_and_total_seconds(self):
-        all_hours = self.bh.get_actual_working_hours(month=self.start.date().month)
+        all_hours = self.bh.get_actual_working_hours(month=self.start.month)
         project_seconds = DefaultDict(0.0)
         total_seconds = all_hours * 3600
         postponed_seconds = 0.0
@@ -211,7 +239,7 @@ class ResourcePlanner:
             for e in day:
                 if "pause" in e.tags:
                     continue
-                if "distribute" in e.tags:
+                if "distribute" in e.tags or "overhead" in e.tags:
                     # postponed_entries[d].append(e)
                     postponed_seconds += e.duration.seconds
                     continue
@@ -221,7 +249,7 @@ class ResourcePlanner:
                 project = self.projects.get_by_name(e.name)
                 project_seconds[project.name] += e.duration.seconds
 
-        sick_days = self.bh.get_sick_days(month=self.start.date().month, year=self.start.date().year)
+        sick_days = self.bh.get_sick_days(month=self.start.month, year=self.start.year)
         sick_seconds = self.bh.get_daily_working_hours() * 3600. * len(sick_days)
         postponed_seconds += sick_seconds
 
@@ -242,11 +270,10 @@ class ResourcePlanner:
             for p in project_seconds:
                 project_seconds[p] += d_time
 
-        vac_days = self.bh.get_vacations(month=self.start.date().month)
-        course_days = self.bh.get_course_days(month=self.start.date().month)
-        project_seconds["Vacations"] = self.bh.get_daily_working_hours() * 3600. * len(vac_days)
-        # project_seconds["Sick"] = self.bh.get_daily_working_hours() * 3600. * len(sick_days)
-        project_seconds["Courses"] = self.bh.get_daily_working_hours() * 3600. * len(course_days)
+        vac_days = self.bh.get_vacations(month=self.start.month, year = self.start.year)
+        course_days = self.bh.get_course_days(month=self.start.month)
+        project_seconds["Vacations"] = self.bh.get_daily_labor_hours() * 3600. * len(vac_days)
+        project_seconds["Courses"] = self.bh.get_daily_labor_hours() * 3600. * len(course_days)
         return project_seconds, total_seconds
 
     def output_results_old(self):
@@ -259,7 +286,7 @@ class ResourcePlanner:
 
         for p_name in self.project_seconds:
             phours = self.project_seconds[p_name] / 3600.
-            percent = phours / self.bh.get_actual_working_hours(self.start.date().month) * 100.
+            percent = phours / self.bh.get_actual_working_hours(self.start.month) * 100.
             perc_sum += percent
 
             if p_name not in self.special_projects:
@@ -309,9 +336,9 @@ class ResourcePlanner:
         dtemp = Template(self.config.templates["project_line"])
         stemp = Template(self.config.templates["sum_line"])
 
-        pdate = self.start.date()
+        pdate = self.start
         _, mdays = monthrange(pdate.year, pdate.month)
-        ndate = self.start.date() + tdelta(days=mdays)
+        ndate = self.start + tdelta(days=mdays)
 
         log.info(f"Planning for {pdate} and {ndate}")
 
@@ -570,6 +597,7 @@ class ResourcePlanner:
     def add_from_csv(self, csv_file):
         pd = pandas.read_csv(csv_file, index_col=False)
         for i, row in pd.iterrows():
+            print(row)
             wid = row["WID"]
             ws_ids = [w.id for w in self.ws]
             if wid not in ws_ids:
@@ -578,7 +606,7 @@ class ResourcePlanner:
                 assert isinstance(wid, int)
                 ws = self.ws.get(wid)
 
-            inf = pytz.timezone("Europe/Berlin")
+            inf = self.get_timezone()
 
             start = parse(f"{row['Date']}, {row['From']}+2:00")
 
@@ -588,12 +616,12 @@ class ResourcePlanner:
                 to = None
 
             try:
-                duration = parse(f"{row['Duration']}").time()
+                duration = parse_time(row['Duration'])
             except ValueError:
                 duration = None
 
             if duration is not None:
-                delta = tdelta(hours=duration.hour, minutes=duration.minute, seconds=duration.second)
+                delta = tdelta(hours = duration.hour, minutes = duration.minute, seconds = duration.second)
             else:
                 shours = start.time().hour
                 sminut = start.time().minute
@@ -639,6 +667,9 @@ class ResourcePlanner:
                 "created_with": "resource_planner"
             }
             )
+
+    def get_timezone(self):
+        return pytz.timezone("Europe/Berlin")
 
     def _find_ws_from_project_name(self, project):
         """
@@ -688,8 +719,7 @@ class ResourcePlanner:
             "description": desc,
             "tags": e_tags,
             "created_with": "resource_planner"
-        }
-        )
+        })
 
 
 class SubCommandSplitter:
@@ -710,7 +740,7 @@ class SubCommandSplitter:
 
     def imp(self):
         parser = argparse.ArgumentParser()
-        parser.add_argument("csv_file", required=True, type=str, help="What CSV file to parse")
+        parser.add_argument("--csv-file", type=str, help="What CSV file to parse")
         args, classlist = parser.parse_known_args()
         self.rp.add_from_csv(args.csv_file)
 
@@ -725,13 +755,27 @@ class SubCommandSplitter:
 
         args, classlist = parser.parse_known_args(sys.argv[2:])
 
-        start_str = f"{args.date} {args.start_time}+02:00"
-        end_str = f"{args.date} {args.end_time}+02:00"
+        start_str = f"{args.date} {args.start_time}"
+        end_str = f"{args.date} {args.end_time}"
 
         date_start = parse(start_str)
         date_end = parse(end_str)
 
         self.rp.add(args.project, args.description, args.tags, date_start, date_end)
+
+    def add_default_break(self):
+        parser = argparse.ArgumentParser()
+        parser.add_argument("date", type=str)
+
+        args, classlist = parser.parse_known_args(sys.argv[2:])
+
+        start_str = f"{args.date} 12:00:00"
+        end_str = f"{args.date} 13:00:00"
+
+        date_start = parse(start_str)
+        date_end = parse(end_str)
+
+        self.rp.add("Sonstiges", "Mittagspause", "pause", date_start, date_end)
 
 
 def main():
@@ -758,13 +802,20 @@ def main():
     elif args.year == -1:
         args.year = curr_year
 
+    if args.month == -1:
+        args.month = curr_month - 1
+        if args.month == 0:
+            args.month = 12
+        elif args.month < 0:
+            args.month %= 12
+
     if args.start and args.end:
         start = parse(args.start)
         end = parse(args.end)
     else:
         (first, last) = monthrange(args.year, args.month)
-        start = datetime.datetime(args.year, args.month, 1, 0, 0, 0)
-        end = datetime.datetime(args.year, args.month, last, 23, 59, 59)
+        start = datetime.date(args.year, args.month, 1)
+        end = datetime.date(args.year, args.month, last)
 
     with open(args.config, "r") as f:
         config = yaml.load(f)

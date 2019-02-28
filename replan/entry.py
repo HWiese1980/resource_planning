@@ -5,6 +5,9 @@ from replan.functions import format_td
 
 class Entry:
     def __init__(self, name, start, end, duration, tags = None):
+        assert hasattr(start, "time"), "Start of entry must have time information"
+        assert hasattr(end, "time"), "End of entry must have time information"
+
         self.name = name
         self.start = start
         self.end = end
